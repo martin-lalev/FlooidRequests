@@ -1,6 +1,7 @@
 // swift-tools-version:6.0
 
 import PackageDescription
+import CompilerPluginSupport
 
 let package = Package(
     name: "FlooidRequests",
@@ -16,11 +17,14 @@ let package = Package(
         ),
     ],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-syntax.git", from: "509.0.0"),
     ],
     targets: [
         .target(
             name: "FlooidRequests",
-            dependencies: [],
+            dependencies: [
+                "FlooidRequestClientMacros"
+            ],
             path: "Abstract"
         ),
         .target(
@@ -29,6 +33,14 @@ let package = Package(
                 .target(name: "FlooidRequests"),
             ],
             path: "URLSession"
+        ),
+        .macro(
+            name: "FlooidRequestClientMacros",
+            dependencies: [
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax")
+            ],
+            path: "Macros"
         ),
     ],
     swiftLanguageVersions: [.v6]

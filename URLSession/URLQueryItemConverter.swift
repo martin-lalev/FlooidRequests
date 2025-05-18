@@ -9,7 +9,7 @@
 import Foundation
 import FlooidRequests
 
-public struct QueryItemEncoder: Sendable {
+public struct DefaultQueryItemEncoder: QueryItemEncoder {
     
     // MARK: - Properties
     
@@ -36,7 +36,7 @@ public struct QueryItemEncoder: Sendable {
     
     // MARK: - Conversions
     
-    public func queryItems(for parameters: [String: Any]) -> [Request.QueryItem] {
+    public func queryItems(for parameters: [String: Any & Sendable]) -> [Request.QueryItem] {
         return parameters.reduce([]) { (result, arg1) -> [Request.QueryItem] in
             return result + self.queryItems(for: arg1.key, value: arg1.value)
         }

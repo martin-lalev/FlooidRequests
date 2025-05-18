@@ -15,15 +15,23 @@ public protocol RequestMapperPlugin: Sendable {
     func map(_ original: Request) async throws -> Request
 }
 
-public enum ResponseProcessPluginResult<T: Sendable>: Sendable {
-    case success(value: T)
+public enum ResponseProcessPluginResult: Sendable {
+    case success(value: ParsableResponse)
     case retry
     case notProcessed
 }
 
-public protocol ResponseProcessPlugin<T>: Sendable {
-    associatedtype T: Sendable
-    func process(response: Response) async throws -> ResponseProcessPluginResult<T>
+public struct ParsableResponse: Sendable {
+    public let decoder: JSONDecoder
+    public let response: Response
+    
+    public init(decoder: JSONDecoder, response: Response) {
+        self.decoder = decoder
+        self.response = response
+    }
+}
+public protocol ResponseProcessPlugin: Sendable {
+    func process(response: Response) async throws -> ResponseProcessPluginResult
 }
 
 public struct ResponseError: Error {
@@ -31,11 +39,11 @@ public struct ResponseError: Error {
 }
 
 public extension RequestExecuter {
-    func execute<T>(
+    func execute(
         request: Request,
         requestMappers: [RequestMapperPlugin],
-        responseProcessers: [any ResponseProcessPlugin<T>]
-    ) async throws -> T {
+        responseProcessers: [ResponseProcessPlugin]
+    ) async throws -> ParsableResponse {
         if let mapper = requestMappers.first {
             return try await self.execute(
                 request: mapper.map(request),

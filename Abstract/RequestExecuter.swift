@@ -11,6 +11,18 @@ public protocol RequestExecuter: Sendable {
     func execute(request: Request) async throws -> Response
 }
 
+public final class AnyRequestExecuter: RequestExecuter {
+    private let executer: @Sendable (_ request: Request) async throws -> Response
+    
+    public init(_ executer: @Sendable @escaping (_ request: Request) async throws -> Response) {
+        self.executer = executer
+    }
+
+    public func execute(request: Request) async throws -> Response {
+        try await executer(request)
+    }
+}
+
 public protocol RequestMapperPlugin: Sendable {
     func map(_ original: Request) async throws -> Request
 }

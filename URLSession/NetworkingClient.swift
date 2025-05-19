@@ -16,10 +16,37 @@ enum ServiceError: Error {
 extension URLSession: @retroactive RequestExecuter {
     public func execute(request: Request) async throws -> Response {
         let urlRequest = request.generateRequest()
+        
         let (data, response) = try await self.data(for: urlRequest)
+        
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ServiceError.notHTTPResponse
         }
-        return Response(status: httpResponse.statusCode, data: data, headers: httpResponse.allHeaderFields)
+        
+        let normalizedHeaders = httpResponse.allHeaderFields.enumerated().reduce(into: [:]) { partialResult, element in
+            if let stringKey = element.element.key as? String {
+                partialResult[stringKey.uppercased()] = element.element.value
+            } else {
+                partialResult[element.element.key] = element.element.value
+            }
+        }
+        
+        return Response(
+            status: httpResponse.statusCode,
+            data: data,
+            headers: normalizedHeaders
+        )
+    }
+}
+
+public extension ResponseStatusCheck {
+    static var success: ResponseStatusCheck {
+        .range(200 ..< 300)
+    }
+    static var badRequest: ResponseStatusCheck {
+        .single(400)
+    }
+    static var unauthorized: ResponseStatusCheck {
+        .single(401)
     }
 }

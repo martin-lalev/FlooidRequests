@@ -10,15 +10,52 @@ import Foundation
 public protocol QueryItemEncoder: Sendable {
     func queryItems(for parameters: [String: Any & Sendable]) -> [Request.QueryItem]
 }
+public enum BodyItemEncoder: Sendable {
+    case json, urlEncoded
+}
 
-public final class RequestClient: Sendable {
+public struct RawBodyParam: Sendable {
+    public let data: Data
+    public let contentType: String
+    
+    public init(data: Data, contentType: String) {
+        self.data = data
+        self.contentType = contentType
+    }
+}
+public enum RequestExecuterServiceBody: Sendable {
+    case raw(RawBodyParam)
+    case params([String: Any & Sendable])
+}
+public protocol RequestExecuterService: Sendable {
+    func makeRequest(
+        method: Request.Method,
+        path: String,
+        body: RequestExecuterServiceBody?,
+        query: [String: Any & Sendable],
+        headers: [String: String]?,
+        timeout: TimeInterval?,
+        cachePolicy: NSURLRequest.CachePolicy?
+    ) -> Request
+
+    func execute(request: Request) async throws -> ParsableResponse
+    
+    func execute<V: Codable & Sendable>(request: Request) async throws -> V
+
+    func execute(request: Request) async throws -> Data
+
+    func execute(request: Request) async throws -> Void
+}
+
+public final class NetworkRequestExecuterClient {
     private let networkingClient: RequestExecuter
     private let requestMappers: [RequestMapperPlugin]
     private let responseProcessers: [ResponseProcessPlugin]
     private let host: String
-    private let timeout: TimeInterval?
-    private let cachePolicy: NSURLRequest.CachePolicy?
+    private let timeout: TimeInterval
+    private let cachePolicy: NSURLRequest.CachePolicy
     private let queryItemEncoder: QueryItemEncoder
+    private let bodyItemEncoder: BodyItemEncoder
     private let decoder: JSONDecoder
 
     public init(
@@ -26,9 +63,10 @@ public final class RequestClient: Sendable {
         requestMappers: [RequestMapperPlugin],
         responseProcessers: [ResponseProcessPlugin],
         host: String,
-        timeout: TimeInterval?,
-        cachePolicy: NSURLRequest.CachePolicy?,
+        timeout: TimeInterval,
+        cachePolicy: NSURLRequest.CachePolicy,
         queryItemEncoder: QueryItemEncoder,
+        bodyItemEncoder: BodyItemEncoder,
         decoder: JSONDecoder
     ) {
         self.networkingClient = networkingClient
@@ -38,37 +76,55 @@ public final class RequestClient: Sendable {
         self.timeout = timeout
         self.cachePolicy = cachePolicy
         self.queryItemEncoder = queryItemEncoder
+        self.bodyItemEncoder = bodyItemEncoder
         self.decoder = decoder
     }
 }
 
-public extension RequestClient {
-    func body(_ params: [String: Any & Sendable] = [:]) -> Request.Body {
-        return .urlEncoded(parameters: queryItemEncoder.queryItems(for: params))
+extension RequestExecuterServiceBody {
+    func asRequestBody(
+        bodyItemEncoder: BodyItemEncoder,
+        queryItemEncoder: QueryItemEncoder
+    ) -> Request.Body {
+        switch (self, bodyItemEncoder) {
+        case (.raw(let parameters), _):
+            return .plain(data: parameters.data, contentType: parameters.contentType)
+        
+        case (.params(let parameters), .json):
+            return .json(parameters: parameters)
+        
+        case (.params(let parameters), .urlEncoded):
+            return .urlEncoded(parameters: queryItemEncoder.queryItems(for: parameters))
+        }
     }
+}
 
-    func makeRequest(
+extension NetworkRequestExecuterClient: RequestExecuterService {
+    public func makeRequest(
         method: Request.Method,
         path: String,
-        body: Request.Body = .none,
-        query: [String: Any & Sendable] = [:],
-        headers:[String: String]? = [:],
-        timeout: TimeInterval? = nil,
-        cachePolicy: NSURLRequest.CachePolicy? = nil
+        body: RequestExecuterServiceBody?,
+        query: [String: Any & Sendable],
+        headers:[String: String]?,
+        timeout: TimeInterval?,
+        cachePolicy: NSURLRequest.CachePolicy?
     ) -> Request {
         Request(
             method,
             host: self.host,
             path: path,
             query: queryItemEncoder.queryItems(for: query),
-            body: body,
+            body: body?.asRequestBody(
+                bodyItemEncoder: bodyItemEncoder,
+                queryItemEncoder: queryItemEncoder
+            ) ?? .none,
             headers: headers,
             timeout: timeout ?? self.timeout,
             cachePolicy: cachePolicy ?? self.cachePolicy
         )
     }
 
-    func execute(request: Request) async throws -> ParsableResponse {
+    public func execute(request: Request) async throws -> ParsableResponse {
         return try await networkingClient.execute(
             request: request,
             requestMappers: requestMappers,
@@ -76,15 +132,15 @@ public extension RequestClient {
         )
     }
     
-    func execute<V: Codable & Sendable>(request: Request) async throws -> V {
+    public func execute<V: Codable & Sendable>(request: Request) async throws -> V {
         return try await execute(request: request).parse()
     }
 
-    func execute(request: Request) async throws -> Data {
+    public func execute(request: Request) async throws -> Data {
         return try await execute(request: request).parse()
     }
 
-    func execute(request: Request) async throws -> Void {
+    public func execute(request: Request) async throws -> Void {
         return try await execute(request: request).parse()
     }
 }
@@ -145,4 +201,5 @@ public macro Delete(
 public macro makeNetworkingService<T>(_ service: T.Type) = #externalMacro(module: "FlooidRequestClientMacros", type: "RequestClientFactoryMacro")
 
 public typealias QueryParam<T> = T
+public typealias HeaderParam<T> = T
 public typealias BodyParam<T> = T

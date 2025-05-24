@@ -25,9 +25,9 @@ public struct RequestClientServiceMacro: PeerMacro {
             .compactMap { try? implement(declaration: $0.decl) }
         
         let clientImplementation = try StructDeclSyntax("struct \(raw: protocolName)Client: \(raw: protocolName)") {
-            DeclSyntax(stringLiteral: "private let requestClient: RequestClient")
+            DeclSyntax(stringLiteral: "private let requestClient: RequestExecuterService")
             
-            try InitializerDeclSyntax("init(requestClient: RequestClient)") {
+            try InitializerDeclSyntax("init(requestClient: RequestExecuterService)") {
                 ExprSyntax(stringLiteral: "self.requestClient = requestClient")
             }.with(\.leadingTrivia, .newlines(2))
             
@@ -97,25 +97,40 @@ private extension RequestClientServiceMacro {
         let path = declaration.path(from: pathArgument)
         let queryExpressions = declaration.dictionaryParameters(paramNameType: "QueryParam", variableName: "queryParams")
         let bodyExpressions = declaration.dictionaryParameters(paramNameType: "BodyParam", variableName: "bodyParams")
+        let headerExpressions = declaration.dictionaryParameters(paramNameType: "HeaderParam", variableName: "headerParams")
 
         let makeRequestFunctionExperession = FunctionCallExprSyntax(callee: "self.requestClient.makeRequest" as ExprSyntax) {
             LabeledExprSyntax(label: "method", expression: methodArgument)
             LabeledExprSyntax(label: "path", expression: path)
             
-            if !queryExpressions.isEmpty {
-                LabeledExprSyntax(label: "query", expression: ExprSyntax("queryParams"))
-            }
-            
             if !bodyExpressions.isEmpty {
-                LabeledExprSyntax(label: "body", expression: ExprSyntax("requestClient.body(bodyParams)"))
+                LabeledExprSyntax(label: "body", expression: ExprSyntax(".params(bodyParams)"))
+            } else {
+                LabeledExprSyntax(label: "body", expression: ExprSyntax(".none"))
             }
 
+            if !queryExpressions.isEmpty {
+                LabeledExprSyntax(label: "query", expression: ExprSyntax("queryParams"))
+            } else {
+                LabeledExprSyntax(label: "query", expression: ExprSyntax("[:]"))
+            }
+            
+            if !headerExpressions.isEmpty {
+                LabeledExprSyntax(label: "headers", expression: ExprSyntax("headerParams"))
+            } else {
+                LabeledExprSyntax(label: "headers", expression: ExprSyntax("[:]"))
+            }
+            
             if let timeout = macroAttribute.arguments?.as(LabeledExprListSyntax.self)?.first(where: { $0.label?.text == "timeout" })?.expression {
                 LabeledExprSyntax(label: "timeout", expression: timeout)
+            } else {
+                LabeledExprSyntax(label: "timeout", expression: ExprSyntax("nil"))
             }
 
             if let cachePolicy = macroAttribute.arguments?.as(LabeledExprListSyntax.self)?.first(where: { $0.label?.text == "cachePolicy" })?.expression {
                 LabeledExprSyntax(label: "cachePolicy", expression: cachePolicy)
+            } else {
+                LabeledExprSyntax(label: "cachePolicy", expression: ExprSyntax("nil"))
             }
         }
 
@@ -131,6 +146,15 @@ private extension RequestClientServiceMacro {
                     if !queryExpressions.isEmpty {
                         DeclSyntax("var queryParams: [String: Any & Sendable] = [:]")
                         for assignment in queryExpressions {
+                            assignment
+                        }
+                    }
+                }
+                
+                CodeBlockItemListSyntax {
+                    if !headerExpressions.isEmpty {
+                        DeclSyntax("var headerParams: [String: String] = [:]")
+                        for assignment in headerExpressions {
                             assignment
                         }
                     }

@@ -9,7 +9,7 @@ import Foundation
 import FlooidRequests
 
 extension Request {
-    func generateRequest(defaultHeaders:[String: String] = [:], timeout:TimeInterval = 60, cachePolicy:NSURLRequest.CachePolicy = .reloadIgnoringCacheData) -> URLRequest {
+    func generateRequest() throws -> URLRequest {
         let url: URL = {
             var urlComponents = URLComponents(string: self.host)
             urlComponents?.path = "/" + self.path
@@ -17,21 +17,16 @@ extension Request {
             return urlComponents?.url
             }()!
         
-        var request = URLRequest(url: url, cachePolicy: self.cachePolicy ?? cachePolicy, timeoutInterval: self.timeout ?? timeout)
+        var request = URLRequest(url: url, cachePolicy: self.cachePolicy, timeoutInterval: self.timeout)
         request.httpMethod = self.methodName.rawValue
         
-        for header in defaultHeaders {
-            request.setValue(header.value, forHTTPHeaderField: header.key)
-        }
         for header in self.headers ?? [:] {
             request.setValue(header.value, forHTTPHeaderField: header.key)
         }
-        if let contentType = self.body.contentType {
-            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        }
-        
-        if let bodyData = self.body.rawData() {
+        if let body {
+            let bodyData = try body.rawData()
             request.httpBody = bodyData
+            request.setValue(body.contentType, forHTTPHeaderField: "Content-Type")
             request.setValue(String(describing:bodyData.count), forHTTPHeaderField: "Content-Length")
         }
         
@@ -53,25 +48,24 @@ extension Request {
 }
 
 extension Request.Body {
-    func rawData() -> Data? {
+    func rawData() throws -> Data {
         switch self {
-        case .none:
-            return nil
         case .plain(let data, _):
             return data
         case .json(let parameters):
-            return try? JSONSerialization.data(withJSONObject: parameters, options: [])
+            return try JSONSerialization.data(withJSONObject: parameters, options: [])
         case .urlEncoded(let parameters):
-            return parameters.map({ $0.name + "=" + ($0.value ?? "") }).joined(separator: "&").data(using: .utf8)
+            guard let data = parameters.map({ $0.name + "=" + ($0.value ?? "") }).joined(separator: "&").data(using: .utf8) else {
+                throw ServiceError.bodyNotEncodable
+            }
+            return data
         }
     }
 }
 
 extension Request.Body {
-    var contentType: String? {
+    var contentType: String {
         switch self {
-        case .none:
-            return nil
         case .plain(_, let contentType):
             return contentType
         case .json:

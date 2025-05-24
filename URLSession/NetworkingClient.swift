@@ -11,11 +11,12 @@ import FlooidRequests
 
 enum ServiceError: Error {
     case notHTTPResponse
+    case bodyNotEncodable
 }
 
 extension URLSession: @retroactive RequestExecuter {
     public func execute(request: Request) async throws -> Response {
-        let urlRequest = request.generateRequest()
+        let urlRequest = try request.generateRequest()
         
         let (data, response) = try await self.data(for: urlRequest)
         

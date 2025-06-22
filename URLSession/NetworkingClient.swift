@@ -14,7 +14,7 @@ enum ServiceError: Error {
     case bodyNotEncodable
 }
 
-extension URLSession: @retroactive RequestExecuter {
+extension URLSession: RequestExecuter {
     public func execute(request: Request) async throws -> Response {
         let urlRequest = try request.generateRequest()
         
